@@ -30,6 +30,7 @@ db.info(function(err, info) {
     continuous: true,
     include_docs: true,
     onChange: function(change) { 
+      console.log(change)
       if (!change.deleted) {
         if(handlers[change.doc.table]) {
           if (change.doc.type == "row"){
@@ -61,7 +62,9 @@ var TableControls = React.createClass({
       table: self.props.table,
       type: "col", 
       key: colid,
-      label: collabel
+      label: collabel,
+      editable: true,
+      hidden: false
     }    
 
     db.put(d,function(err,doc){
@@ -74,6 +77,7 @@ var TableControls = React.createClass({
     var u = uuid.v4();
     var d = {
       _id: "row/" + self.props.table + "/" + u,
+      key: u,
       table: self.props.table,
       type: "row",
       recordid: u
@@ -122,13 +126,38 @@ var TableControls = React.createClass({
 });
 
 var BioSheetRow = React.createClass({
+  updateRow: _.debounce(function(){
+    var self = this;
+    var d = {};
+    _.keys(self.refs).map(function(ref){
+      d[ref] = self.refs[ref].getDOMNode().value.trim()
+    })
+    _.defaults(d,self.props.row);
+    db.put(d,function(err,obj){
+      console.log(err,obj);
+    });
+  }, 250),
   render: function(){
     var self = this;
-    var cells = self.props.cols.map(function (col) {
+    var cells = _.keys(self.props.cols).map(function (key) {
+      var col = self.props.cols[key]
+      var defval = ""
       if(self.props.row[col.key]) {
-        return <td key={self.props.row.id + "/" + col.key}>{self.props.row[col.key]}</td>;
+        defval = self.props.row[col.key];
+      } 
+      if (col.editable) {
+        return (
+          <td key={col.key}>
+            <textarea ref={col.key} onChange={self.updateRow} defaultValue={defval}>
+            </textarea>
+          </td>
+        );      
       } else {
-        return <td key={self.props.row.id + "/" + col.key}></td>
+        return (
+          <td key={col.key}>
+            {defval}
+          </td>
+        );        
       }
     });    
     return (
@@ -141,54 +170,54 @@ var BioSheetRow = React.createClass({
 
 var BioSheet = React.createClass({
   getInitialState: function() {
-    return {cols: [], rows: []};
+    return {cols: {}, rows: {}};
   },
   componentWillMount: function() {
     var self = this;
     handlers[self.props.table] = {
       addRow: function(row){
-        var state = self.state;
-        var newstate = _.clone(state);
-        newstate.rows.push(row);
+        var newstate = { rows: self.state.rows };
+        newstate.rows[row.key] = row;
         self.setState(newstate);
       },
       addCol: function(col) {
-        var state = self.state;
-        var newstate = _.clone(state);
-        newstate.cols.push(col);
+        var newstate = { cols: self.state.cols };
+        newstate.cols[col.key] = col;
         self.setState(newstate);
       },
       init: _.debounce(function() {
         db.allDocs({ include_docs: true, startkey: "col/" + self.props.table + "/", endkey: "col/" + self.props.table + "0"}, function(err,objs){
-          var cols = [];
+          var cols = {};
           _.each(objs.rows,function(obj){
-            cols.push(obj.doc);
+            cols[obj.doc.key] = obj.doc;
           })
           self.setState({ cols: cols })
         });   
         db.allDocs({ include_docs: true, startkey: "row/" + self.props.table + "/", endkey: "row/" + self.props.table + "0"}, function(err,objs){
-          var rows = [];
+          var rows = {};
           _.each(objs.rows,function(obj){
-            rows.push(obj.doc);
+            rows[obj.doc.key] = obj.doc;
           })
           self.setState({ rows: rows })
         });
-      },1)
+      },100)
     }
     handlers[self.props.table].init()
   },  
   render: function() {
     var self = this;
-    var headings = self.state.cols.map(function (col) {
+    var headings = _.keys(self.state.cols).map(function (key) {
+      var col = self.state.cols[key];
       return <th key={col.key} id={"col-" + col.key}>{col.label}</th>;
     });
-    var rows = self.state.rows.map(function (row) {
-      return <BioSheetRow table={self.props.table} key={row._id} cols={self.state.cols} row={row} />;
+    var rows = _.keys(self.state.rows).map(function (key) {
+      var row = self.state.rows[key];
+      return <BioSheetRow table={self.props.table} key={row.key} cols={self.state.cols} row={row} />;
     });    
     return (
       <div>
         <TableControls table={this.props.table}/>
-        <table className="table" id={this.props.table}>
+        <table className="table table-bordered">
           <thead>
             <tr>
               {headings}
@@ -206,18 +235,47 @@ var BioSheet = React.createClass({
 var AppControls = React.createClass({
   addSheet: function(){
     var self = this;
-    var sheetname = this.refs.sheetname.getDOMNode().value.trim();
-    if (sheetname == "") {
+    var sheetid = this.refs.sheetid.getDOMNode().value.trim();
+    var sheetlabel = this.refs.sheetlabel.getDOMNode().value.trim();
+    if (sheetid == "" || sheetlabel == "") {
       return false;
     }
-    console.log(sheetname);
+
+    var d = {
+      _id: "table/" + sheetid, 
+      table: sheetid,
+      type: "table", 
+      key: sheetid,
+      label: sheetlabel
+    }    
+
+    db.put(d,function(err,doc){
+      // console.log(err,doc);
+    })
+
+    var cd = {
+      _id: "col/" + sheetid + "/" + "recordid", 
+      table: sheetid,
+      type: "col", 
+      key: "recordid",
+      label: "Record ID",
+      editable: false,
+      hidden: false
+    }    
+
+    db.put(cd,function(err,doc){
+      // console.log(err,doc);
+    })    
+
+    self.props.addSheet(d);
     return false;
   },
   render: function() { 
     var self = this;
     return (
       <form className="form-inline" onSubmit={self.addSheet}>
-        Sheet Name: <input type="text" ref="sheetname"></input>
+        ID: <input type="text" ref="sheetid"></input>
+        Label: <input type="text" ref="sheetlabel"></input>
         <input type="submit" className="btn btn-primary" value="Add Sheet"></input>
       </form>
     );
@@ -225,11 +283,65 @@ var AppControls = React.createClass({
 });
 
 var App = React.createClass({
-    render: function() {  
+    getInitialState: function() {
+      return {sheets: {}};
+    },
+    componentWillMount: function() {
+      var self = this;
+      db.allDocs({ include_docs: true, startkey: "table/", endkey: "table0"}, function(err,objs){
+        var sheets = {};
+        _.each(objs.rows,function(obj){
+          sheets[obj.doc.key] = obj.doc;
+        })
+        self.setState({ sheets: sheets })
+      });
+    },    
+    addSheet: function(sheet){
+      var self = this;
+      var newstate = { sheets: self.state.sheets };
+      newstate.sheets[sheet.key] = sheet;
+      self.setState(newstate);
+      return false    
+    },
+    render: function() {
+      var self = this;
+      var sheetcount = 0;
+      var sheets = _.keys(self.state.sheets).map(function(key){
+        var table = self.state.sheets[key];
+        var className = "tab-pane";
+        if (sheetcount == 0){
+          className += " active";
+        }
+        sheetcount += 1;
+        return (
+          <div key={"sheet" + key} className={className} id={key}>
+            <BioSheet table={key} />
+          </div>
+        );
+      })
+      var tabcount = 0;
+      var tabs = _.keys(self.state.sheets).map(function(key){
+        var table = self.state.sheets[key];
+        var className = "";
+        if (tabcount == 0){
+          className += "active";
+        }
+        tabcount += 1;        
+        return (
+          <li className={className} key={"tab"+key}>
+            <a href={"#" + key} data-toggle="tab">{table.label}</a>
+          </li>
+        );
+      })      
       return (
         <div>
-          <AppControls />
-          <BioSheet table={tableid}></BioSheet>
+          <AppControls addSheet={self.addSheet} />
+          <ul className="nav nav-tabs">
+            {tabs}
+          </ul>
+          <div className="tab-content">       
+            {sheets}
+          </div>
         </div>
       );
     }
