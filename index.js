@@ -239,8 +239,35 @@ var AppControls = React.createClass({
     var sheetlabel = this.refs.sheetlabel.getDOMNode().value.trim();
     if (sheetid == "" || sheetlabel == "") {
       return false;
+    }
+
+    var d = {
+      _id: "table/" + sheetid, 
+      table: sheetid,
+      type: "table", 
+      key: sheetid,
+      label: sheetlabel
     }    
-    self.props.addSheet({ key: sheetid, name: sheetlabel});
+
+    db.put(d,function(err,doc){
+      // console.log(err,doc);
+    })
+
+    var cd = {
+      _id: "col/" + sheetid + "/" + "recordid", 
+      table: sheetid,
+      type: "col", 
+      key: "recordid",
+      label: "Record ID",
+      editable: false,
+      hidden: false
+    }    
+
+    db.put(cd,function(err,doc){
+      // console.log(err,doc);
+    })    
+
+    self.props.addSheet(d);
     return false;
   },
   render: function() { 
@@ -257,8 +284,18 @@ var AppControls = React.createClass({
 
 var App = React.createClass({
     getInitialState: function() {
-      return {sheets: { schema: { key: "schema", name: "Schema" }}};
+      return {sheets: {}};
     },
+    componentWillMount: function() {
+      var self = this;
+      db.allDocs({ include_docs: true, startkey: "table/", endkey: "table0"}, function(err,objs){
+        var sheets = {};
+        _.each(objs.rows,function(obj){
+          sheets[obj.doc.key] = obj.doc;
+        })
+        self.setState({ sheets: sheets })
+      });
+    },    
     addSheet: function(sheet){
       var self = this;
       var newstate = { sheets: self.state.sheets };
@@ -292,7 +329,7 @@ var App = React.createClass({
         tabcount += 1;        
         return (
           <li className={className} key={"tab"+key}>
-            <a href={"#" + key} data-toggle="tab">{table.name}</a>
+            <a href={"#" + key} data-toggle="tab">{table.label}</a>
           </li>
         );
       })      
