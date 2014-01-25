@@ -15,7 +15,8 @@
     "watchify": "~0.4.1",
     "pouchdb": "*",
     "underscore": "*",
-    "node-uuid": "*"
+    "node-uuid": "*",
+    "bootstrap-browserify": "*"
   },
   "scripts": {
     "start": "STATIC_ROOT=./static watchify -o browser-bundle.js -v -d .",
